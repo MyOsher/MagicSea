@@ -15,8 +15,8 @@ venv/
 # Model weights
 *.pt
 
-# Outputs (keep the folder, ignore heavy artifacts)
-output/*.png
-output/*.npy
-output/*.npz
+# Outputs (keep the folder, ignore heavy artifacts) — nested too (output/real/)
+output/**/*.png
+output/**/*.npy
+output/**/*.npz
 !output/.gitkeep
