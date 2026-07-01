@@ -33,14 +33,14 @@ def _load_model(out_dir, device):
     return net
 
 
-def run(cfg, npy_path, seed=0):
+def run(cfg, npy_path, seed=0, split="random"):
     out_dir = Path(cfg["paths"]["output_dir"])
     with open(out_dir / "norm_stats.json") as f:
         stats = json.load(f)
     mean, std = stats["mean"], stats["std"]
 
     maps = np.load(npy_path)
-    _, val_maps = split_maps(maps, seed=seed)  # same held-out split as training
+    _, val_maps = split_maps(maps, seed=seed, mode=split)  # same held-out split as training
     ds = WaveInpaintingDataset(val_maps, mean, std, augment=False)  # fixed holes
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

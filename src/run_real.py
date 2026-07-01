@@ -1,24 +1,30 @@
 """One command to run the WHOLE real-data experiment from a NetCDF file.
 
-    python -m src.run_real data/raw/<real_copernicus_file>.nc --epochs 40
+    python -m src.run_real data/raw/<real_file>.nc --epochs 40
 
-It chains the exact same steps the weekly scripts do, but end-to-end and with
-its own output folder so REAL results never overwrite the synthetic smoke-test
-in output/:
+It chains the same steps the weekly scripts do, but end-to-end, and runs the
+evaluation under TWO hold-out schemes so the result is honest:
 
-    load .nc -> 64x64 .npy   (src.data.load)
-    train U-Net              (src.train)
-    evaluate vs baseline     (src.evaluate)
-    write output/real/RESULTS_REAL.md   (provenance + real numbers)
+    load .nc -> .npy                         (src.data.load)
+    for split in {temporal, random}:
+        train U-Net                          (src.train)
+        evaluate vs interpolation baseline   (src.evaluate)
+        robustness — RMSE vs hole size       (src.robustness)
+    write output/real/RESULTS_REAL.md        (provenance + both splits compared)
 
-Why a separate folder: output/RESULTS.md is explicitly labelled as synthetic.
-Real numbers are the deliverable customers can actually be shown, so we keep
-them apart and stamp where the data came from.
+Why two splits:
+- random   — shuffle then hold out 25% of maps. For an hourly time series the
+             held-out frames are near-duplicates of training frames (optimistic).
+- temporal — hold out the LAST 25% of maps in time. Validation is a genuinely
+             later period; this is the stricter, honest generalization test.
+The gap between the two numbers *is* the measure of temporal leakage.
+
+Results live under output/real/<split>/ so they never touch the synthetic
+smoke-test in output/.
 """
 from pathlib import Path
 import argparse
 import copy
-import json
 
 import numpy as np
 
@@ -28,60 +34,109 @@ from src.train import train as train_unet
 from src import evaluate as evaluate_mod
 from src import robustness as robustness_mod
 
-
-def _real_cfg(cfg: dict) -> dict:
-    """Clone the config with output redirected to output/real/."""
-    real = copy.deepcopy(cfg)
-    real["paths"]["output_dir"] = str(Path(cfg["paths"]["output_dir"]) / "real")
-    return real
+SPLITS = ["temporal", "random"]  # temporal first: it's the headline, honest test
 
 
-def _robustness_section(rob: dict) -> str:
-    """Render the RMSE-vs-hole-size table + crossover finding, or a stub."""
-    if not rob:
-        return "_(robustness test not run)_\n"
+def _split_cfg(cfg: dict, mode: str) -> dict:
+    """Clone the config with output redirected to output/real/<mode>/."""
+    c = copy.deepcopy(cfg)
+    c["paths"]["output_dir"] = str(Path(cfg["paths"]["output_dir"]) / "real" / mode)
+    return c
+
+
+def _run_split(cfg: dict, mode: str, npy_path: Path,
+               epochs: int, batch: int, lr: float, seed: int) -> dict:
+    sc = _split_cfg(cfg, mode)
+    Path(sc["paths"]["output_dir"]).mkdir(parents=True, exist_ok=True)
+    print("\n" + "#" * 60)
+    print(f"# HOLD-OUT = {mode.upper()}")
+    print("#" * 60)
+    print(f"train U-Net ({epochs} epochs)...")
+    train_unet(sc, npy_path, epochs=epochs, batch=batch, lr=lr, seed=seed, split=mode)
+    print("evaluate vs baseline...")
+    summary = evaluate_mod.run(sc, npy_path, seed=seed, split=mode)
+    print("robustness sweep...")
+    rob = robustness_mod.run(sc, npy_path, seed=seed, split=mode)
+    return {"summary": summary, "rob": rob}
+
+
+def _robustness_table(rob: dict) -> str:
     covs = rob["coverages"]
     methods = ["mean", "nearest", "interpolation", "unet"]
-    header = "| hole coverage | mean | nearest | interpolation | **U-Net** |\n"
-    sep = "|---:|---:|---:|---:|---:|\n"
-    rows = ""
+    out = ("| hole coverage | mean | nearest | interpolation | **U-Net** |\n"
+           "|---:|---:|---:|---:|---:|\n")
     for c in covs:
         cells = [f"{rob['rmse_mean'][m][c]:.3f}" for m in methods]
-        rows += f"| {c*100:.0f}% | {cells[0]} | {cells[1]} | {cells[2]} | **{cells[3]}** |\n"
-    big = covs[-1]
-    interp_big = rob["rmse_mean"]["interpolation"][big]
-    unet_big = rob["rmse_mean"]["unet"][big]
-    imp_big = 100 * (interp_big - unet_big) / interp_big if interp_big else 0.0
-    small = covs[0]
-    note = (
-        f"At small gaps ({small*100:.0f}%) classical interpolation is essentially "
-        f"optimal and edges out the U-Net; the U-Net crosses over and leads once "
-        f"gaps grow (>=20%), reaching {imp_big:+.1f}% at {big*100:.0f}% coverage.")
-    return header + sep + rows + "\n" + note + "\n"
+        out += f"| {c*100:.0f}% | {cells[0]} | {cells[1]} | {cells[2]} | **{cells[3]}** |\n"
+    return out
 
 
-def _write_results_md(cfg: dict, real_cfg: dict, nc_path: Path,
-                      npy_path: Path, maps: np.ndarray, summary: dict,
-                      epochs: int, rob: dict | None = None) -> Path:
-    out_dir = Path(real_cfg["paths"]["output_dir"])
-    md = out_dir / "RESULTS_REAL.md"
+def _write_results_md(cfg: dict, nc_path: Path, npy_path: Path,
+                      maps: np.ndarray, results: dict, epochs: int) -> Path:
+    out_root = Path(cfg["paths"]["output_dir"]) / "real"
+    md = out_root / "RESULTS_REAL.md"
     region, t, var = cfg["region"], cfg["time"], cfg["variable"]
     n_nan = int(np.isnan(maps).sum())
     pct_nan = 100 * n_nan / maps.size if maps.size else 0.0
-    base, unet = summary["baseline_rmse_mean"], summary["unet_rmse_mean"]
-    base_mae, unet_mae = summary["baseline_mae_mean"], summary["unet_mae_mean"]
-    imp = summary["rmse_improvement_pct"]
-    mae_note = ("The U-Net's gain shows up in **RMSE** (which punishes large "
-                "errors) more than in MAE — i.e. it mainly prevents the big "
-                "misses, and is roughly level with interpolation on typical pixels."
-                ) if unet_mae >= base_mae else (
-                "The U-Net improves both RMSE and MAE.")
+
+    def _headline_row(mode: str) -> str:
+        s = results[mode]["summary"]
+        return (f"| {mode} | {s['baseline_rmse_mean']:.3f} | {s['unet_rmse_mean']:.3f} "
+                f"| {s['unet_mae_mean']:.3f} | {s['rmse_improvement_pct']:+.1f}% |")
+
+    t_imp = results["temporal"]["summary"]["rmse_improvement_pct"]
+    r_imp = results["random"]["summary"]["rmse_improvement_pct"]
+    leak_note = (
+        f"The random split reports **{r_imp:+.1f}%** and the temporal split "
+        f"**{t_imp:+.1f}%**. The difference is the honest cost of temporal "
+        f"autocorrelation: shuffled hourly frames are near-duplicates of training "
+        f"frames, so the random number flatters the model. **Quote the temporal "
+        f"number** as the real generalization result.")
+
+    rob_sections = ""
+    for mode in SPLITS:
+        rob_sections += (f"### {mode} hold-out\n"
+                         + _robustness_table(results[mode]["rob"]) + "\n")
+
+    # Data-driven, honest interpretation — does the U-Net actually beat
+    # interpolation under the STRICT temporal test, at any hole size?
+    t_rob = results["temporal"]["rob"]
+    covs = t_rob["coverages"]
+    unet_beats_interp = any(
+        t_rob["rmse_mean"]["unet"][c] < t_rob["rmse_mean"]["interpolation"][c]
+        for c in covs)
+    if t_imp >= 0 or unet_beats_interp:
+        pattern_note = (
+            "Under the temporal hold-out the U-Net still beats interpolation at "
+            "larger gaps — the advantage survives the stricter test.")
+        bottom_line = (
+            f"**Bottom line:** the U-Net's edge holds out-of-time "
+            f"({t_imp:+.1f}% headline), strongest where gaps are large.")
+        margin_bullet = (
+            "- **Modest margin:** on this smooth field interpolation is a strong "
+            "baseline; the U-Net's edge is real but concentrated at larger gaps.")
+    else:
+        pattern_note = (
+            "**Under the honest temporal hold-out, interpolation beats this U-Net "
+            "at every gap size.** The U-Net's apparent win under the random split "
+            "does not survive once the test set is genuinely later in time — it was "
+            "an artifact of temporal leakage.")
+        bottom_line = (
+            f"**Bottom line:** with a single 10-day window this U-Net overfits the "
+            f"training period and does **not** generalize to later sea states "
+            f"({t_imp:+.1f}% out-of-time). The trustworthy deliverables here are the "
+            f"honest measurement and the reproducible pipeline; beating "
+            f"interpolation out-of-time needs more and more-diverse data "
+            f"(multi-month, multi-region), not a code tweak.")
+        margin_bullet = (
+            "- **No out-of-time edge yet:** interpolation is a strong baseline on "
+            "this smooth field; the U-Net only 'wins' under the leaky random split.")
 
     md.write_text(
         f"""# REAL-DATA Results — Marine Map Gap-Filling (Wave Height)
 
-> These numbers are on **real** data, not the synthetic smoke test. Source and
-> preprocessing are stamped below for provenance.
+> Real data, not the synthetic smoke test. Evaluated under two hold-out schemes;
+> the **temporal** one is the honest generalization result.
 
 ## Data provenance
 - **Source file:** `{nc_path.name}`
@@ -93,32 +148,33 @@ def _write_results_md(cfg: dict, real_cfg: dict, nc_path: Path,
 - **Value range:** {float(np.nanmin(maps)):.2f} .. {float(np.nanmax(maps)):.2f} m
 - **Missing (land/gaps):** {n_nan} pixels ({pct_nan:.1f}%)
 
-## Headline result
-| Method | RMSE (m) down | MAE (m) down |
-|--------|--------------:|-------------:|
-| Interpolation baseline | {base:.3f} | {summary['baseline_mae_mean']:.3f} |
-| **U-Net** | **{unet:.3f}** | **{summary['unet_mae_mean']:.3f}** |
-| **Improvement** | **{imp:+.1f}%** | |
+## Headline — two hold-out schemes
+| Hold-out | Baseline RMSE (m) | U-Net RMSE (m) | U-Net MAE (m) | Improvement |
+|---|---:|---:|---:|---:|
+{_headline_row("temporal")}
+{_headline_row("random")}
 
-Scored on {summary['n_maps']} held-out maps, on hidden hole pixels only, land
-excluded — the same fair setup as the synthetic run (same maps, same holes for
-both methods). {mae_note}
+**temporal** = train on the earliest ~75% of time steps, test on the latest ~25%
+(genuinely later sea states). **random** = shuffle then split (optimistic).
+Both score RMSE/MAE on hidden hole pixels only, land excluded, identical holes
+for baseline and U-Net.
+
+{leak_note}
 
 ## Robustness — RMSE vs hole size (vs a panel of baselines)
-{_robustness_section(rob)}
+{rob_sections}For tiny gaps interpolation is essentially optimal in both schemes. {pattern_note}
+
+{bottom_line}
+
 ## Honest limitations
-- **Temporal autocorrelation:** the {maps.shape[0]} maps are consecutive model
-  time steps (hourly), so held-out maps are near-neighbours of training maps in
-  time. The U-Net vs baseline comparison is fair (identical maps/holes), but
-  "held-out" here is not "a different week/season". A stricter test holds out
-  whole days or a separate month.
-- **Modest margin, honestly:** on this smooth field with small default holes the
-  interpolation baseline is already strong; the U-Net's edge is real but small,
-  and concentrated at larger gaps (see table above).
+- **Single 10-day window:** even the temporal hold-out tests only the last days
+  of one download, not a different season. The right next step is a multi-month
+  file so train and test cover different weather regimes.
+{margin_bullet}
 - Single region ({region['name']}), single variable ({var['copernicus_var']}),
   {maps.shape[1]}x{maps.shape[2]} resolution — intentional POC scope.
 
-## Artifacts (in output/real/)
+## Artifacts (under output/real/<split>/)
 - `train_loss.png` — training/validation loss curve.
 - `evaluation_example.png` — truth / holes / baseline / U-Net / per-pixel error.
 - `robustness_rmse_vs_holesize.png` — RMSE vs hole size, all methods.
@@ -135,39 +191,32 @@ python -m src.run_real {nc_path.as_posix()} --epochs {epochs}
 
 def main(nc_path: str, epochs: int = 40, batch: int = 8, lr: float = 1e-3, seed: int = 0):
     cfg = load_config()
-    real_cfg = _real_cfg(cfg)
-    Path(real_cfg["paths"]["output_dir"]).mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("STEP 1/3  load NetCDF -> NumPy grid")
+    print("STEP 1  load NetCDF -> NumPy grid")
     print("=" * 60)
     maps = load_nc(nc_path, cfg)
     size = cfg["preprocess"]["target_size"]
     npy_path = Path(cfg["paths"]["processed_dir"]) / (Path(nc_path).stem + f"_{size}x{size}.npy")
-    if len(maps) < 8:
+    if len(maps) < 16:
         raise SystemExit(
-            f"Only {len(maps)} maps in this file — too few to train/hold-out. "
-            "Download a longer time window (months) in config.yaml."
+            f"Only {len(maps)} maps in this file — too few for a temporal hold-out. "
+            "Download a longer time window in config.yaml."
         )
 
-    print("\n" + "=" * 60)
-    print(f"STEP 2/3  train U-Net ({epochs} epochs)")
-    print("=" * 60)
-    train_unet(real_cfg, npy_path, epochs=epochs, batch=batch, lr=lr, seed=seed)
+    results = {mode: _run_split(cfg, mode, npy_path, epochs, batch, lr, seed)
+               for mode in SPLITS}
+
+    md = _write_results_md(cfg, Path(nc_path), npy_path, maps, results, epochs)
 
     print("\n" + "=" * 60)
-    print("STEP 3/4  evaluate U-Net vs interpolation baseline")
-    print("=" * 60)
-    summary = evaluate_mod.run(real_cfg, npy_path, seed=seed)
-
-    print("\n" + "=" * 60)
-    print("STEP 4/4  robustness — RMSE vs hole size")
-    print("=" * 60)
-    rob = robustness_mod.run(real_cfg, npy_path, seed=seed)
-
-    md = _write_results_md(cfg, real_cfg, Path(nc_path), npy_path, maps, summary, epochs, rob)
+    print("SUMMARY (RMSE on hidden pixels, meters)")
+    for mode in SPLITS:
+        s = results[mode]["summary"]
+        print(f"  {mode:9s}  baseline {s['baseline_rmse_mean']:.3f}  "
+              f"U-Net {s['unet_rmse_mean']:.3f}  ({s['rmse_improvement_pct']:+.1f}%)")
     print(f"\nDONE. Real-data report: {md}")
-    return summary
+    return results
 
 
 if __name__ == "__main__":
