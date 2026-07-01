@@ -13,6 +13,32 @@ import numpy as np
 from scipy.interpolate import griddata
 
 
+def mean_fill(corrupted_map):
+    """Naive floor: fill every hole with the mean of the known pixels."""
+    filled = corrupted_map.copy()
+    valid = ~np.isnan(corrupted_map)
+    if valid.sum() == 0:
+        return filled
+    filled[~valid] = corrupted_map[valid].mean()
+    return filled
+
+
+def nearest_fill(corrupted_map):
+    """Fill each hole with its nearest known pixel value."""
+    filled = corrupted_map.copy()
+    valid = ~np.isnan(corrupted_map)
+    if valid.sum() == 0:
+        return filled
+    h, w = corrupted_map.shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    pts = np.column_stack([yy[valid], xx[valid]])
+    holes = ~valid
+    filled[holes] = griddata(pts, corrupted_map[valid],
+                             np.column_stack([yy[holes], xx[holes]]),
+                             method="nearest")
+    return filled
+
+
 def interpolate_fill(corrupted_map):
     """Fill NaNs in a 2D map by interpolating from valid pixels.
 

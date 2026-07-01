@@ -32,6 +32,7 @@ python -m src.inspect_data data/processed/mediterranean_wave_SYNTHETIC_64x64.npy
 python -m src.run_baseline                                       # קו בסיס + RMSE/MAE + תמונת השוואה
 python -m src.train --epochs 40                                  # מאמן את ה-U-Net
 python -m src.evaluate                                           # U-Net מול הבסיס על מפות held-out
+python -m src.robustness                                         # RMSE לפי גודל חור מול פאנל בסיסים
 ```
 > לאימון עדיף סט גדול יותר: `python -m src.data.synthetic --days 200` לפני `load`.
 
@@ -67,6 +68,7 @@ python -m src.evaluate
 - `dataset.py` — מייצר זוגות אימון תוך כדי ריצה; מנרמל; חורים אקראיים לאימון וקבועים לוולידציה.
 - `train.py` — לולאת אימון (MSE על פיקסלי ים), שומר `output/unet.pt`, `norm_stats.json`, `train_loss.png`.
 - `evaluate.py` — משווה U-Net מול הבסיס על **אותן** מפות held-out ו**אותם** חורים; שומר `evaluation.json` + `evaluation_example.png`.
+- `robustness.py` — מבחן עמידות: RMSE לפי גודל חור (5%–50%) מול פאנל בסיסים (ממוצע/nearest/אינטרפולציה). מראה שהיתרון של ה-U-Net גדל עם החורים.
 
 ## פלטים
 - `data/processed/*_64x64.npy` — מערך `(ימים, 64, 64)` מוכן למודל.
