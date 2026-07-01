@@ -36,14 +36,16 @@ python -m src.evaluate                                           # U-Net מול 
 > לאימון עדיף סט גדול יותר: `python -m src.data.synthetic --days 200` לפני `load`.
 
 ## מסלול B — דאטה אמיתי מ-Copernicus
-1. הרשמה (חינם): https://data.marine.copernicus.eu/register
-2. `cp .env.example .env` ומלאי שם משתמש/סיסמה.
-3. ודאי את `copernicus_dataset_id` המדויק לגלים בקטלוג, ואז:
+מדריך מלא צעד-אחר-צעד: **[`docs/REAL_DATA.md`](docs/REAL_DATA.md)**. בקצרה:
 ```bash
-python -m src.data.download
+cp .env.example .env            # למלא שם משתמש/סיסמה של Copernicus
+python -m src.data.download     # מוריד VHM0 לפי config.yaml
 python -m src.data.load data/raw/<file>.nc
-python -m src.run_baseline data/processed/<file>_64x64.npy
+python -m src.train --epochs 40
+python -m src.evaluate
 ```
+> `load.py` כבר עמיד למוזרויות של קבצים אמיתיים (מימד depth, ערכי fill, גריד בכל גודל).
+> את ההורדה עצמה יש להריץ **מקומית** — סביבת ה-web חוסמת גישה לשרתי הדאטה.
 
 ## מה קורה מאחורי הקלעים
 
