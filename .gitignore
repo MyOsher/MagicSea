@@ -12,6 +12,9 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 
+# Model weights
+*.pt
+
 # Outputs (keep the folder, ignore heavy artifacts)
 output/*.png
 output/*.npy

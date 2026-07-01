@@ -1,4 +1,3 @@
-# Week 1 — data handling only. Model deps (torch) come in weeks 3-4.
 numpy>=1.24
 scipy>=1.10
 xarray>=2023.1
@@ -6,6 +5,9 @@ netCDF4>=1.6
 matplotlib>=3.7
 pyyaml>=6.0
 python-dotenv>=1.0
+
+# Model (weeks 3-4). CPU build is enough for 64x64.
+torch>=2.0
 
 # Official Copernicus Marine download toolbox.
 # Only needed once you have credentials and want REAL data.

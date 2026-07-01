@@ -36,20 +36,27 @@ def _land_mask(h: int, w: int) -> np.ndarray:
     return (xs + ys) < 0.35
 
 
-def generate(cfg: dict, n_days: int = 14, seed: int = 0) -> Path:
+def generate(cfg: dict, n_days: int = 14, seed: int = 0, scene_len: int = 7) -> Path:
     region, t, var = cfg["region"], cfg["time"], cfg["variable"]
     # Use a coarse native grid; load.py downsamples to target_size anyway.
     h = w = 128
     rng = np.random.default_rng(seed)
-
-    base = _smooth_field(h, w, rng)
     land = _land_mask(h, w)
+
+    # Draw a fresh base "weather pattern" every `scene_len` days so the maps
+    # are genuinely diverse (something for a model to learn), while days within
+    # a scene stay temporally continuous.
     days = []
+    base = _smooth_field(h, w, rng)
     for d in range(n_days):
-        # Wave height in meters (~0.3-5.5 m), with gentle day-to-day drift.
-        day = 0.3 + 5.0 * base + 0.1 * d + rng.normal(0, 0.05, size=(h, w)).astype(np.float32)
+        if d % scene_len == 0:
+            base = _smooth_field(h, w, rng)
+            amp = rng.uniform(3.0, 6.0)      # scene-specific wave energy
+            floor = rng.uniform(0.2, 1.0)
+        day = floor + amp * base + 0.05 * (d % scene_len) \
+            + rng.normal(0, 0.05, size=(h, w)).astype(np.float32)
         day[land] = np.nan  # no waves on land
-        days.append(day)
+        days.append(day.astype(np.float32))
     data = np.stack(days, axis=0)  # (time, lat, lon), meters
 
     lats = np.linspace(region["lat_min"], region["lat_max"], h, dtype=np.float32)
@@ -72,4 +79,10 @@ def generate(cfg: dict, n_days: int = 14, seed: int = 0) -> Path:
 
 
 if __name__ == "__main__":
-    generate(load_config())
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--days", type=int, default=14,
+                   help="number of daily maps to generate (use more for training)")
+    p.add_argument("--seed", type=int, default=0)
+    args = p.parse_args()
+    generate(load_config(), n_days=args.days, seed=args.seed)

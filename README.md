@@ -11,8 +11,10 @@
 |------|------|-------|-------|
 | **1** | דאטה ימי נקי כמערך NumPy | `src/data/` , `src/inspect_data.py` | ✅ |
 | **2** | חורים מלאכותיים + קו בסיס + RMSE/MAE | `src/masks.py`, `src/baseline.py`, `src/metrics.py`, `src/run_baseline.py` | ✅ |
-| **3-4** | מודל U-Net + אימון ראשוני | `src/model.py`, `src/train.py` | בהמשך |
-| **5** | הערכה: U-Net מול הבסיס על מפות held-out | `src/evaluate.py` | בהמשך |
+| **3-4** | מודל U-Net + אימון ראשוני | `src/model.py`, `src/dataset.py`, `src/train.py` | ✅ |
+| **5** | הערכה: U-Net מול הבסיס על מפות held-out | `src/evaluate.py` | ✅ |
+
+**תוצאה עיקרית (דאטה סינתטי):** ה-U-Net הוריד RMSE מ-**0.178** ל-**0.126** מ׳ — שיפור של **~29%** מול אינטרפולציה, על 50 מפות שלא נראו באימון. פירוט מלא: [`output/RESULTS.md`](output/RESULTS.md).
 
 ---
 
@@ -28,7 +30,10 @@ python -m src.data.synthetic                                    # data/raw/medit
 python -m src.data.load data/raw/mediterranean_wave_SYNTHETIC.nc # NetCDF -> NumPy 64x64
 python -m src.inspect_data data/processed/mediterranean_wave_SYNTHETIC_64x64.npy
 python -m src.run_baseline                                       # קו בסיס + RMSE/MAE + תמונת השוואה
+python -m src.train --epochs 40                                  # מאמן את ה-U-Net
+python -m src.evaluate                                           # U-Net מול הבסיס על מפות held-out
 ```
+> לאימון עדיף סט גדול יותר: `python -m src.data.synthetic --days 200` לפני `load`.
 
 ## מסלול B — דאטה אמיתי מ-Copernicus
 1. הרשמה (חינם): https://data.marine.copernicus.eu/register
@@ -55,10 +60,18 @@ python -m src.run_baseline data/processed/<file>_64x64.npy
 - `metrics.py` — RMSE ו-MAE, מחושבים **רק על אזור החורים** שהוסתר.
 - `run_baseline.py` — מריץ על כל המפות ושומר `output/baseline_metrics.json` + `output/baseline_example.png`.
 
+**שבוע 3–5 — מודל, אימון והערכה:**
+- `model.py` — U-Net קומפקטי (2 ערוצי קלט: מפה-עם-חורים + מסכת פיקסלים תקינים).
+- `dataset.py` — מייצר זוגות אימון תוך כדי ריצה; מנרמל; חורים אקראיים לאימון וקבועים לוולידציה.
+- `train.py` — לולאת אימון (MSE על פיקסלי ים), שומר `output/unet.pt`, `norm_stats.json`, `train_loss.png`.
+- `evaluate.py` — משווה U-Net מול הבסיס על **אותן** מפות held-out ו**אותם** חורים; שומר `evaluation.json` + `evaluation_example.png`.
+
 ## פלטים
 - `data/processed/*_64x64.npy` — מערך `(ימים, 64, 64)` מוכן למודל.
-- `output/baseline_metrics.json` — RMSE/MAE של הבסיס (היעד שצריך לנצח).
-- `output/baseline_example.png` — אמת / חורים / השלמה / שגיאה.
+- `output/RESULTS.md` — דוח תוצאות קצר (הדליברבל המרכזי).
+- `output/evaluation.json` + `evaluation_example.png` — U-Net מול הבסיס.
+- `output/train_loss.png` — עקומת אימון.
+- `output/baseline_metrics.json` — RMSE/MAE של הבסיס בלבד.
 
-> **תוצאות דאטה סינתטי (רפרנס):** baseline RMSE ≈ 0.29 מ׳, MAE ≈ 0.20 מ׳ על 14 מפות.
-> אלה מספרים על דאטה מדומה — יתעדכנו כשירוץ על נתוני Copernicus אמיתיים.
+> **תוצאות דאטה סינתטי:** baseline RMSE ≈ 0.18 מ׳, U-Net RMSE ≈ 0.13 מ׳ (שיפור ~29%).
+> אלה מספרים על דאטה מדומה (smoke test) — יש להריץ מחדש על נתוני Copernicus אמיתיים לפני ציטוט ללקוחות.
