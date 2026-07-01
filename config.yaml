@@ -1,0 +1,32 @@
+# Central config for the POC. Edit here, not in the scripts.
+
+# --- Region: Mediterranean Sea (small box = fast download) ---
+region:
+  name: "mediterranean"
+  lon_min: 2.0
+  lon_max: 9.0
+  lat_min: 38.0
+  lat_max: 43.0
+
+# --- Time window: two weeks of history (Week 1 goal) ---
+time:
+  start: "2023-06-01"
+  end: "2023-06-14"
+
+# --- Variable of interest ---
+# SST = Sea Surface Temperature. Easiest to get, easiest to explain to investors.
+# Copernicus dataset for daily gap-free SST L4:
+variable:
+  short_name: "sst"                      # name used inside our code
+  copernicus_var: "analysed_sst"         # variable name inside the NetCDF
+  copernicus_dataset_id: "SST_MED_SST_L4_NRT_OBSERVATIONS_010_004-TDS"
+
+# --- Preprocessing ---
+preprocess:
+  target_size: 64        # THE key speed tip: downsample maps to 64x64
+  auto_celsius: true     # auto-convert Kelvin -> Celsius when values look like Kelvin
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  output_dir: "output"
