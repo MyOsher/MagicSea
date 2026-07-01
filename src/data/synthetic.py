@@ -4,6 +4,9 @@ Lets you build and test the ENTIRE pipeline (weeks 2-5) before you have
 Copernicus credentials. The output NetCDF has the same shape/variable name
 as the real download, so `src/data/load.py` treats both identically.
 
+Produces a wave-height-like field (VHM0, meters) with a land mask of NaNs,
+mirroring how real Copernicus wave data has no values over land.
+
     python -m src.data.synthetic
 """
 from pathlib import Path
@@ -15,7 +18,7 @@ from src.config import load_config
 
 
 def _smooth_field(h: int, w: int, rng: np.random.Generator) -> np.ndarray:
-    """A smooth, ocean-like scalar field via summed low-frequency waves."""
+    """A smooth, ocean-like scalar field in [0, 1] via low-frequency waves."""
     ys, xs = np.linspace(0, 3 * np.pi, h), np.linspace(0, 3 * np.pi, w)
     gx, gy = np.meshgrid(xs, ys)
     field = np.zeros((h, w), dtype=np.float32)
@@ -23,9 +26,14 @@ def _smooth_field(h: int, w: int, rng: np.random.Generator) -> np.ndarray:
         fx, fy = rng.uniform(0.3, 1.5, size=2)
         phase = rng.uniform(0, 2 * np.pi)
         field += rng.uniform(0.5, 2.0) * np.sin(fx * gx + fy * gy + phase)
-    # Normalize to a realistic SST-in-Celsius range (~16-26 C).
-    field = (field - field.min()) / (np.ptp(field) + 1e-9)
-    return (16.0 + 10.0 * field).astype(np.float32)
+    return ((field - field.min()) / (np.ptp(field) + 1e-9)).astype(np.float32)
+
+
+def _land_mask(h: int, w: int) -> np.ndarray:
+    """A static 'coastline' — top-left corner is land (True = land = NaN)."""
+    ys, xs = np.meshgrid(np.linspace(0, 1, h), np.linspace(0, 1, w), indexing="ij")
+    # Land where we're near the top-left corner; a soft diagonal coastline.
+    return (xs + ys) < 0.35
 
 
 def generate(cfg: dict, n_days: int = 14, seed: int = 0) -> Path:
@@ -35,11 +43,14 @@ def generate(cfg: dict, n_days: int = 14, seed: int = 0) -> Path:
     rng = np.random.default_rng(seed)
 
     base = _smooth_field(h, w, rng)
+    land = _land_mask(h, w)
     days = []
     for d in range(n_days):
-        # Gentle day-to-day drift so the "time" dimension is meaningful.
-        days.append(base + 0.15 * d + rng.normal(0, 0.05, size=(h, w)).astype(np.float32))
-    data = np.stack(days, axis=0)  # (time, lat, lon), degrees Celsius
+        # Wave height in meters (~0.3-5.5 m), with gentle day-to-day drift.
+        day = 0.3 + 5.0 * base + 0.1 * d + rng.normal(0, 0.05, size=(h, w)).astype(np.float32)
+        day[land] = np.nan  # no waves on land
+        days.append(day)
+    data = np.stack(days, axis=0)  # (time, lat, lon), meters
 
     lats = np.linspace(region["lat_min"], region["lat_max"], h, dtype=np.float32)
     lons = np.linspace(region["lon_min"], region["lon_max"], w, dtype=np.float32)
@@ -48,18 +59,17 @@ def generate(cfg: dict, n_days: int = 14, seed: int = 0) -> Path:
     ds = xr.Dataset(
         {var["copernicus_var"]: (("time", "latitude", "longitude"), data)},
         coords={"time": times, "latitude": lats, "longitude": lons},
-        attrs={"source": "SYNTHETIC — not real observations", "units": "degC"},
+        attrs={"source": "SYNTHETIC — not real observations", "units": "m"},
     )
 
     raw_dir = Path(cfg["paths"]["raw_dir"])
     raw_dir.mkdir(parents=True, exist_ok=True)
     path = raw_dir / f"{region['name']}_{var['short_name']}_SYNTHETIC.nc"
     ds.to_netcdf(path)
-    print(f"Wrote synthetic dataset: {path}  shape={data.shape}")
+    print(f"Wrote synthetic dataset: {path}  shape={data.shape}  "
+          f"(land NaN: {100 * np.isnan(data).mean():.0f}%)")
     return path
 
 
 if __name__ == "__main__":
-    # Synthetic data is already in Celsius; load.py auto-detects and won't
-    # re-offset it, so no config changes are needed.
     generate(load_config())

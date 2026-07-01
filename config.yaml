@@ -14,12 +14,14 @@ time:
   end: "2023-06-14"
 
 # --- Variable of interest ---
-# SST = Sea Surface Temperature. Easiest to get, easiest to explain to investors.
-# Copernicus dataset for daily gap-free SST L4:
+# VHM0 = spectral significant wave height (meters). High operational value
+# (shipping, marine energy, insurance) and still a single scalar field.
+# Confirm the exact dataset_id in the Copernicus catalog before downloading:
+#   https://data.marine.copernicus.eu/product/GLOBAL_ANALYSISFORECAST_WAV_001_027
 variable:
-  short_name: "sst"                      # name used inside our code
-  copernicus_var: "analysed_sst"         # variable name inside the NetCDF
-  copernicus_dataset_id: "SST_MED_SST_L4_NRT_OBSERVATIONS_010_004-TDS"
+  short_name: "wave"                     # name used inside our code
+  copernicus_var: "VHM0"                 # variable name inside the NetCDF
+  copernicus_dataset_id: "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
 
 # --- Preprocessing ---
 preprocess:

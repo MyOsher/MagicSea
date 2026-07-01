@@ -14,6 +14,7 @@ Land / missing pixels stay as np.nan on purpose — that is the real-world
 """
 from pathlib import Path
 import sys
+import warnings
 
 import numpy as np
 import xarray as xr
@@ -30,8 +31,11 @@ def _downsample(arr: np.ndarray, size: int) -> np.ndarray:
         raise ValueError(f"Map {h}x{w} is smaller than target {size}x{size}.")
     arr = arr[: bh * size, : bw * size]
     blocks = arr.reshape(size, bh, size, bw)
-    # nanmean ignores holes; an all-NaN block correctly stays NaN.
-    return np.nanmean(blocks, axis=(1, 3)).astype(np.float32)
+    # nanmean ignores holes; an all-NaN block correctly stays NaN. Suppress the
+    # expected "Mean of empty slice" warning for all-land blocks.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmean(blocks, axis=(1, 3)).astype(np.float32)
 
 
 def load(nc_path: str | Path, cfg: dict) -> np.ndarray:
