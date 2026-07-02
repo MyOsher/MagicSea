@@ -45,3 +45,10 @@ Build a Python prototype that fills missing values in marine maps with high accu
 ## Output policy
 - Save final artifacts to `output/`.
 - Prefer CSV, PNG, MD, YAML, or JSON when relevant.
+
+## שפה ותצוגה
+- כתוב תמיד בעברית תקנית בלבד.
+- שמור על ניסוח ברור, קצר, ומסודר מימין לשמאל.
+- השתמש בשורות קצרות וברווחים ברורים כדי לשפר את התצוגה.
+- הימנע ככל האפשר משילוב של אנגלית ומספרים בתוך משפט אחד.
+- אם יש צורך במונחים באנגלית, הפרד אותם לשורה נפרדת או כתוב אותם בזהירות כדי למנוע שיבוש בתצוגה.
