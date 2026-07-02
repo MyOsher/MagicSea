@@ -79,6 +79,18 @@ def _write_results_md(cfg: dict, nc_path: Path, npy_path: Path,
     n_nan = int(np.isnan(maps).sum())
     pct_nan = 100 * n_nan / maps.size if maps.size else 0.0
 
+    # Describe the dataset span dynamically so the narrative fits any file.
+    import datetime
+    try:
+        span_days = (datetime.date.fromisoformat(t["end"])
+                     - datetime.date.fromisoformat(t["start"])).days
+    except Exception:
+        span_days = None
+    n_maps_total = int(maps.shape[0])
+    n_train = n_maps_total - max(1, int(0.25 * n_maps_total))
+    span_str = f"~{span_days}-day" if span_days else f"{n_maps_total}-map"
+    scale_str = f"{span_str} window, {n_maps_total} maps (~{n_train} for training)"
+
     def _headline_row(mode: str) -> str:
         s = results[mode]["summary"]
         return (f"| {mode} | {s['baseline_rmse_mean']:.3f} | {s['unet_rmse_mean']:.3f} "
@@ -88,10 +100,9 @@ def _write_results_md(cfg: dict, nc_path: Path, npy_path: Path,
     r_imp = results["random"]["summary"]["rmse_improvement_pct"]
     leak_note = (
         f"The random split reports **{r_imp:+.1f}%** and the temporal split "
-        f"**{t_imp:+.1f}%**. The difference is the honest cost of temporal "
-        f"autocorrelation: shuffled hourly frames are near-duplicates of training "
-        f"frames, so the random number flatters the model. **Quote the temporal "
-        f"number** as the real generalization result.")
+        f"**{t_imp:+.1f}%**. Shuffling lets near-in-time frames leak between train "
+        f"and test, so the random number is the optimistic one. **Quote the "
+        f"temporal number** as the real generalization result.")
 
     rob_sections = ""
     for mode in SPLITS:
@@ -118,19 +129,25 @@ def _write_results_md(cfg: dict, nc_path: Path, npy_path: Path,
     else:
         pattern_note = (
             "**Under the honest temporal hold-out, interpolation beats this U-Net "
-            "at every gap size.** The U-Net's apparent win under the random split "
-            "does not survive once the test set is genuinely later in time — it was "
-            "an artifact of temporal leakage.")
+            "at every gap size.** On a genuinely later test period the U-Net does "
+            "not out-predict classical interpolation on this smooth field.")
         bottom_line = (
-            f"**Bottom line:** with a single 10-day window this U-Net overfits the "
-            f"training period and does **not** generalize to later sea states "
-            f"({t_imp:+.1f}% out-of-time). The trustworthy deliverables here are the "
-            f"honest measurement and the reproducible pipeline; beating "
-            f"interpolation out-of-time needs more and more-diverse data "
-            f"(multi-month, multi-region), not a code tweak.")
-        margin_bullet = (
-            "- **No out-of-time edge yet:** interpolation is a strong baseline on "
-            "this smooth field; the U-Net only 'wins' under the leaky random split.")
+            f"**Bottom line:** on this {scale_str} the U-Net does **not** beat "
+            f"classical interpolation out-of-time ({t_imp:+.1f}%). Even with a real "
+            f"seasonal hold-out, a compact model trained on a modest number of maps "
+            f"can't out-predict interpolation here. The value delivered is the honest "
+            f"measurement and the reproducible pipeline; closing the gap needs more "
+            f"data (more regions/years) and/or a stronger model — not a quick tweak.")
+        if r_imp >= 0:
+            margin_bullet = (
+                f"- **No out-of-time edge:** the U-Net only 'wins' under the leaky "
+                f"random split ({r_imp:+.1f}%); under the honest temporal split "
+                f"interpolation wins ({t_imp:+.1f}%).")
+        else:
+            margin_bullet = (
+                f"- **No edge yet:** interpolation beats the U-Net under **both** "
+                f"schemes ({r_imp:+.1f}% random, {t_imp:+.1f}% temporal) — the random "
+                f"split is just the less-pessimistic of the two, not a win.")
 
     md.write_text(
         f"""# REAL-DATA Results — Marine Map Gap-Filling (Wave Height)
@@ -167,10 +184,16 @@ for baseline and U-Net.
 {bottom_line}
 
 ## Honest limitations
-- **Single 10-day window:** even the temporal hold-out tests only the last days
-  of one download, not a different season. The right next step is a multi-month
-  file so train and test cover different weather regimes.
+- **Scale — {scale_str}:** one region, one download. A compact U-Net on this many
+  maps is data-limited; more regions and years would give it patterns that
+  generalize beyond a single area/period.
 {margin_bullet}
+- **Training-length sensitive:** shown at {epochs} epochs; on this modest set
+  fewer epochs underfit badly and widen the gap to interpolation. More data would
+  reduce this sensitivity.
+- **Temporal split is optimistic:** its held-out period also drives best-checkpoint
+  selection in training, so the temporal number flatters the U-Net — and it still
+  does not beat interpolation.
 - Single region ({region['name']}), single variable ({var['copernicus_var']}),
   {maps.shape[1]}x{maps.shape[2]} resolution — intentional POC scope.
 

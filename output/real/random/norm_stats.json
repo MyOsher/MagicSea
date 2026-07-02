@@ -1,5 +1,5 @@
 {
-  "mean": 2.0159530639648438,
-  "std": 0.7114442586898804,
-  "npy_path": "/home/user/MagicSea/data/processed/ww3_global_40x40.npy"
+  "mean": 3.4623770713806152,
+  "std": 1.8966304063796997,
+  "npy_path": "/home/user/MagicSea/data/processed/ww3_6month_daily_40x40.npy"
 }

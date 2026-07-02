@@ -10,8 +10,10 @@ region:
   lat_max: 50.0
 
 # --- Time window: the range inside the downloaded WaveWatch III file ---
+# 6-month daily file: 162 daily maps, Jan->Jun 2026 (real seasonal spread,
+# so the temporal hold-out tests winter-trained vs spring/summer sea states).
 time:
-  start: "2026-06-07"
+  start: "2026-01-07"
   end: "2026-06-17"
 
 # --- Variable of interest ---

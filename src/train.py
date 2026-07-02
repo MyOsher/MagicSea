@@ -44,7 +44,11 @@ def split_maps(maps, val_frac=0.25, seed=0, mode="random"):
 
 
 def train(cfg, npy_path, epochs=40, batch=8, lr=1e-3, seed=0, split="random"):
+    # Determinism: same seed -> same numbers, so reported metrics reproduce.
     torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.set_num_threads(1)
     maps = np.load(npy_path)
     train_maps, val_maps = split_maps(maps, seed=seed, mode=split)
     mean, std = compute_stats(train_maps)  # stats from TRAIN only (no leakage)
