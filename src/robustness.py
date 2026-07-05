@@ -44,14 +44,14 @@ def _unet_fill(truth, hole, ocean, net, mean, std, device):
     return out * std + mean
 
 
-def run(cfg, npy_path, seed=0):
+def run(cfg, npy_path, seed=0, split="random"):
     out_dir = Path(cfg["paths"]["output_dir"])
     with open(out_dir / "norm_stats.json") as f:
         stats = json.load(f)
     mean, std = stats["mean"], stats["std"]
 
     maps = np.load(npy_path)
-    _, val_maps = split_maps(maps, seed=seed)
+    _, val_maps = split_maps(maps, seed=seed, mode=split)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     net = UNet().to(device)

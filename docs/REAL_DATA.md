@@ -21,15 +21,28 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-## שלב 4 — הורדה + עיבוד + אימון + הערכה
+## שלב 4 — הורדה
 ```bash
-python -m src.data.download                                     # מוריד VHM0 לפי config.yaml
-python -m src.data.load data/raw/<file>.nc                      # NetCDF -> NumPy 64x64
-python -m src.inspect_data data/processed/<file>_64x64.npy      # בדיקה חזותית
-python -m src.train --epochs 40                                 # מאמן U-Net
-python -m src.evaluate                                          # U-Net מול הבסיס
+python -m src.data.download        # מוריד VHM0 לפי config.yaml אל data/raw/
 ```
-התוצאה תופיע ב-`output/evaluation.json` ו-`output/RESULTS.md`.
+
+## שלב 5 — הרצה מלאה בפקודה אחת
+כל הצינור (טעינה → אימון → הערכה → עמידות → דוח) בפקודה אחת:
+```bash
+python -m src.run_real data/raw/<file>.nc --epochs 40
+```
+הפקודה מריצה **שתי סכימות held-out** ומשווה ביניהן:
+- `temporal` — אימון על הזמנים המוקדמים, בדיקה על המאוחרים (מבחן הכללה הגון).
+- `random` — ערבוב ואז חלוקה (אופטימי; במפות שעתיות זולג מידע).
+
+הפער בין השתיים הוא **מדד הדלף הזמני**. המספר שמצטטים הוא של `temporal`.
+
+התוצאות נשמרות תחת **`output/real/<split>/`** (בנפרד מהסמוק-טסט הסינתטי),
+והדוח המשווה נמצא ב-**`output/real/RESULTS_REAL.md`** — מוטבע עם מקור הקובץ,
+האזור, טווח התאריכים ואחוז החורים, כולל מגבלות הגונות.
+
+> אפשר גם ידנית שלב-אחר-שלב: `src.data.load` → `src.inspect_data` →
+> `src.train` → `src.evaluate` (ראו README). `run_real` פשוט משרשר אותם.
 
 ## מה כבר מטופל בקוד עבור קבצים אמיתיים
 `src/data/load.py` עמיד למוזרויות של קבצי Copernicus אמיתיים:

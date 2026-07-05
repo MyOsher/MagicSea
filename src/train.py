@@ -28,17 +28,29 @@ def masked_mse(pred, target, mask):
     return diff2.sum() / mask.sum().clamp(min=1.0)
 
 
-def split_maps(maps, val_frac=0.25, seed=0):
-    """Hold out whole maps for validation so the net is scored on unseen fields."""
-    idx = np.random.default_rng(seed).permutation(len(maps))
+def split_maps(maps, val_frac=0.25, seed=0, mode="random"):
+    """Hold out whole maps for validation so the net is scored on unseen fields.
+
+    mode="random"   — shuffle then split (default; maximises train diversity).
+    mode="temporal" — hold out the LAST maps in time. For an hourly time series
+                      this is the honest, stricter test: validation is a genuinely
+                      later period, not shuffled near-duplicates of training frames.
+    """
     n_val = max(1, int(val_frac * len(maps)))
+    if mode == "temporal":
+        return maps[:-n_val], maps[-n_val:]
+    idx = np.random.default_rng(seed).permutation(len(maps))
     return maps[idx[n_val:]], maps[idx[:n_val]]
 
 
-def train(cfg, npy_path, epochs=40, batch=8, lr=1e-3, seed=0):
+def train(cfg, npy_path, epochs=40, batch=8, lr=1e-3, seed=0, split="random"):
+    # Determinism: same seed -> same numbers, so reported metrics reproduce.
     torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.set_num_threads(1)
     maps = np.load(npy_path)
-    train_maps, val_maps = split_maps(maps, seed=seed)
+    train_maps, val_maps = split_maps(maps, seed=seed, mode=split)
     mean, std = compute_stats(train_maps)  # stats from TRAIN only (no leakage)
 
     train_ds = WaveInpaintingDataset(train_maps, mean, std, augment=True)

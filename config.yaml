@@ -1,34 +1,40 @@
 # Central config for the POC. Edit here, not in the scripts.
 
-# --- Region: Mediterranean Sea (small box = fast download) ---
+# --- Region: North Atlantic (matches the real WaveWatch III file we ran) ---
+# NOAA ERDDAP longitudes are 0..360, so 300..340 == 60W..20W.
 region:
-  name: "mediterranean"
-  lon_min: 2.0
-  lon_max: 9.0
-  lat_min: 38.0
-  lat_max: 43.0
+  name: "north_atlantic"
+  lon_min: 300.0
+  lon_max: 340.0
+  lat_min: 30.0
+  lat_max: 50.0
 
-# --- Time window: two weeks of history (Week 1 goal) ---
+# --- Time window: the range inside the downloaded WaveWatch III file ---
+# 6-month daily file: 162 daily maps, Jan->Jun 2026 (real seasonal spread,
+# so the temporal hold-out tests winter-trained vs spring/summer sea states).
 time:
-  start: "2023-06-01"
-  end: "2023-06-14"
+  start: "2026-01-07"
+  end: "2026-06-17"
 
 # --- Variable of interest ---
-# VHM0 = spectral significant wave height (meters). High operational value
-# (shipping, marine energy, insurance) and still a single scalar field.
-# Default = Mediterranean wave product (4.2 km), matching the region above.
-# Global alternative: "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i".
-# Confirm the exact id/variable in the catalog before downloading:
-#   https://data.marine.copernicus.eu/product/MEDSEA_ANALYSISFORECAST_WAV_006_017
+# Significant wave height (meters). High operational value (shipping, marine
+# energy, insurance) and still a single scalar field.
+# ACTIVE run = real NOAA WaveWatch III (ERDDAP griddap NWW3_Global_Best),
+# where the variable is named "Thgt".
+# Copernicus alternative (needs an account): var "VHM0",
+#   dataset "cmems_mod_med_wav_anfc_4.2km_PT1H-i" (Mediterranean, lon -180..180).
 variable:
   short_name: "wave"                     # name used inside our code
-  copernicus_var: "VHM0"                 # variable name inside the NetCDF
-  copernicus_dataset_id: "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
+  copernicus_var: "Thgt"                 # variable name inside the NetCDF
+  copernicus_dataset_id: "NWW3_Global_Best (NOAA ERDDAP, WaveWatch III)"
 
 # --- Preprocessing ---
+# WaveWatch III native grid here is 41 lat x 81 lon. target_size must be a
+# multiple of 8 (the U-Net pools 3x). 40 downsamples both dims close to native
+# without inventing latitude rows (upsampling to 64 would).
 preprocess:
-  target_size: 64        # THE key speed tip: downsample maps to 64x64
-  auto_celsius: true     # auto-convert Kelvin -> Celsius when values look like Kelvin
+  target_size: 40        # downsample maps to 40x40 (multiple of 8 for the U-Net)
+  auto_celsius: true     # harmless here: wave height ~0-10 m, never looks like Kelvin
 
 paths:
   raw_dir: "data/raw"

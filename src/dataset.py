@@ -28,6 +28,10 @@ class WaveInpaintingDataset(Dataset):
         self.maps = maps.astype(np.float32)
         self.mean, self.std = mean, std
         self.kind, self.augment, self.base_seed = kind, augment, base_seed
+        # Persistent seeded generator for training augmentation: holes still vary
+        # across samples/epochs, but the whole run reproduces given a fixed seed
+        # (the DataLoader shuffle order is itself seeded via torch.manual_seed).
+        self.aug_rng = np.random.default_rng(base_seed + 104729)
 
     def __len__(self):
         return len(self.maps)
@@ -36,9 +40,8 @@ class WaveInpaintingDataset(Dataset):
         truth = self.maps[idx]
         ocean = ~np.isnan(truth)
 
-        # Deterministic holes for val/eval; random for training augmentation.
-        seed = None if self.augment else self.base_seed + idx
-        rng = np.random.default_rng(seed)
+        # Deterministic holes for val/eval; seeded-but-varied for training.
+        rng = self.aug_rng if self.augment else np.random.default_rng(self.base_seed + idx)
         hole = make_hole(truth.shape, rng, kind=self.kind) & ocean
         corrupted, _ = apply_mask(truth, hole)
 
